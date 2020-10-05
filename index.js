@@ -1,7 +1,3 @@
-process.once('SIGUSR2', () =>
-  server.close((err) => process.kill(process.pid, 'SIGUSR2'))
-);
-
 import express from 'express';
 import { graphqlHTTP } from 'express-graphql';
 import {
@@ -27,7 +23,18 @@ const RainfallDataType = new GraphQLObjectType({
   name: 'RainfallData',
   fields: () => ({
     date: {
-      type: GraphQLString,
+      type: GraphQLFloat,
+    },
+    rainfall: {
+      type: GraphQLFloat,
+    },
+  }),
+});
+const AvgRainfallDataType = new GraphQLObjectType({
+  name: 'AvgRainfallData',
+  fields: () => ({
+    month: {
+      type: GraphQLInt,
     },
     rainfall: {
       type: GraphQLFloat,
@@ -39,14 +46,66 @@ const schema = new GraphQLSchema({
   query: new GraphQLObjectType({
     name: 'Query',
     fields: {
+      monthlyAvgRainfall: {
+        type: new GraphQLList(AvgRainfallDataType),
+        resolve: (_) =>
+          readJson.then((data) => {
+            const rainfall = objectMap(JSON.parse(data), (year, months) => {
+              return objectMap(months, (month, value) => {
+                if (month !== 'rainfall') {
+                  return {
+                    date: new Date(`${year}-${month}`).getTime(),
+                    rainfall: value.rainfall,
+                  };
+                }
+              });
+            });
+            const avgRainfall = rainfall
+              .flat()
+              .filter((obj) => obj)
+              .reduce(
+                (sum, current) => {
+                  const d = new Date(current.date);
+                  console.log(sum);
+                  console.log(d.getMonth());
+                  sum[d.getMonth()].total += current.rainfall;
+                  sum[d.getMonth()].count++;
+                  return sum;
+                },
+                [
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                  { total: 0, count: 0 },
+                ]
+              )
+              .map((monthData, i) => {
+                return {
+                  month: i,
+                  rainfall: monthData.total / monthData.count,
+                };
+              });
+            return avgRainfall;
+          }),
+      },
       yearlyRainfall: {
         type: new GraphQLList(RainfallDataType),
         resolve: (_) =>
           readJson.then((data) => {
             const rainfall = objectMap(JSON.parse(data), (key, value) => {
-              return { date: key, rainfall: value.rainfall };
+              return {
+                date: new Date(key).getTime(),
+                rainfall: value.rainfall,
+              };
             });
-            console.log(rainfall);
             return rainfall;
           }),
       },
@@ -57,11 +116,13 @@ const schema = new GraphQLSchema({
             const rainfall = objectMap(JSON.parse(data), (year, months) => {
               return objectMap(months, (month, value) => {
                 if (month !== 'rainfall') {
-                  return { date: `${year}-${month}`, rainfall: value.rainfall };
+                  return {
+                    date: new Date(`${year}-${month}`).getTime(),
+                    rainfall: value.rainfall,
+                  };
                 }
               });
             });
-            console.log(rainfall.flat().filter((obj) => obj));
             return rainfall.flat().filter((obj) => obj);
           }),
       },
@@ -75,7 +136,7 @@ const schema = new GraphQLSchema({
                   return objectMap(days, (day, value) => {
                     if (day !== 'rainfall') {
                       return {
-                        date: `${year}-${month}-${day}`,
+                        date: new Date(`${year}-${month}-${day}`).getTime(),
                         rainfall: value,
                       };
                     }
@@ -83,7 +144,6 @@ const schema = new GraphQLSchema({
                 }
               });
             });
-            console.log(rainfall.flat(2).filter((obj) => obj));
             return rainfall.flat(2).filter((obj) => obj);
           }),
       },
@@ -97,12 +157,6 @@ app.use(
   graphqlHTTP({
     schema: schema,
     graphiql: true,
-    formatError: (error) => ({
-      message: error.message,
-      locations: error.locations,
-      stack: error.stack ? error.stack.split('\n') : [],
-      path: error.path,
-    }),
   })
 );
 
